@@ -1,11 +1,18 @@
 package ru.netology;
 
+import org.apache.http.NameValuePair;
+import org.apache.http.client.utils.URLEncodedUtils;
+
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -41,7 +48,7 @@ public class Server {
                 executorService.submit(() -> {
                     try {
                         connectionProcessing(socket);
-                    } catch (IOException e) {
+                    } catch (IOException | URISyntaxException e) {
                         throw new RuntimeException(e);
                     }
                 });
@@ -49,7 +56,7 @@ public class Server {
         }
     }
 
-    public void connectionProcessing(Socket socket) throws IOException {
+    public void connectionProcessing(Socket socket) throws IOException, URISyntaxException {
         try (final var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              final var out = new BufferedOutputStream(socket.getOutputStream())) {
 
@@ -63,6 +70,9 @@ public class Server {
 
             final var method = parts[0];
             final var path = parts[1];
+
+            System.out.println(getQueryParam(path));
+
             var request = new Request(method, path);
 
             if (validPaths.contains(request.getPath())) {
@@ -80,6 +90,10 @@ public class Server {
                 }
             }
         }
+    }
+
+    public List<NameValuePair> getQueryParam(String path) throws URISyntaxException {
+        return URLEncodedUtils.parse(new URI(path), StandardCharsets.UTF_8);
     }
 
     public void requestCanHandle(Request request, BufferedOutputStream out) throws IOException {
@@ -118,7 +132,7 @@ public class Server {
     }
 
 
-    public void resourceNotFound(BufferedOutputStream out) throws IOException {
+    public void resourceNotFound(BufferedOutputStream out) throws IOException, URISyntaxException {
         out.write((
                 "HTTP/1.1 404 Not Found\r\n" +
                         "Content-Length: 0\r\n" +
