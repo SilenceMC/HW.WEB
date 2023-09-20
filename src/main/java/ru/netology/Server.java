@@ -9,7 +9,9 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -20,6 +22,9 @@ public class Server {
             "/resources.html", "/styles.css", "/app.js", "/links.html", "/forms.html", "/classic.html", "/events.html", "/events.js");
     private final int port;
     private final int threads;
+    private final int REQUEST_LINE_LENGTH = 3;
+
+    private Map<String, Map<String, Handler>> handlers = new HashMap<>();
 
     public Server(int port, int threads) {
         this.port = port;
@@ -33,69 +38,102 @@ public class Server {
             final var executorService = Executors.newFixedThreadPool(threads);
             while (!serverSocket.isClosed()) {
                 final var socket = serverSocket.accept();
-                executorService.submit(() -> connectionProcessing(socket));
+                executorService.submit(() -> {
+                    try {
+                        connectionProcessing(socket);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
             }
         }
     }
 
-    public void connectionProcessing(Socket socket) {
+    public void connectionProcessing(Socket socket) throws IOException {
         try (final var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              final var out = new BufferedOutputStream(socket.getOutputStream())) {
 
             final var requestLine = in.readLine();
             final var parts = requestLine.split(" ");
 
-            if (parts.length != 3) {
+            if (parts.length != REQUEST_LINE_LENGTH) {
                 // just close socket
                 return;
             }
 
+            final var method = parts[0];
             final var path = parts[1];
-            if (!validPaths.contains(path)) {
-                out.write((
-                        "HTTP/1.1 404 Not Found\r\n" +
-                                "Content-Length: 0\r\n" +
-                                "Connection: close\r\n" +
-                                "\r\n"
-                ).getBytes());
-                out.flush();
-                return;
+            var request = new Request(method, path);
+
+            if (validPaths.contains(request.getPath())) {
+                requestCanHandle(request, out);
             }
 
-            final var filePath = Path.of(".", "public", path);
-            final var mimeType = Files.probeContentType(filePath);
-
-            // special case for classic
-            if (path.equals("/classic.html")) {
-                final var template = Files.readString(filePath);
-                final var content = template.replace(
-                        "{time}",
-                        LocalDateTime.now().toString()
-                ).getBytes();
-                out.write((
-                        "HTTP/1.1 200 OK\r\n" +
-                                "Content-Type: " + mimeType + "\r\n" +
-                                "Content-Length: " + content.length + "\r\n" +
-                                "Connection: close\r\n" +
-                                "\r\n"
-                ).getBytes());
-                out.write(content);
-                out.flush();
-                return;
+            if (!handlers.containsKey(request.getMethod())) {
+                resourceNotFound(out);
+            } else {
+                var handlerMap = handlers.get(request.getMethod());
+                if (!handlerMap.containsKey(request.getPath())) {
+                    resourceNotFound(out);
+                } else {
+                    handlerMap.get(path).handle(request, out);
+                }
             }
+        }
+    }
 
-            final var length = Files.size(filePath);
+    public void requestCanHandle(Request request, BufferedOutputStream out) throws IOException {
+        final var filePath = Path.of(".", "public", request.getPath());
+        final var mimeType = Files.probeContentType(filePath);
+
+        // special case for classic
+        if (request.getPath().equals("/classic.html")) {
+            final var template = Files.readString(filePath);
+            final var content = template.replace(
+                    "{time}",
+                    LocalDateTime.now().toString()
+            ).getBytes();
             out.write((
                     "HTTP/1.1 200 OK\r\n" +
                             "Content-Type: " + mimeType + "\r\n" +
-                            "Content-Length: " + length + "\r\n" +
+                            "Content-Length: " + content.length + "\r\n" +
                             "Connection: close\r\n" +
                             "\r\n"
             ).getBytes());
-            Files.copy(filePath, out);
+            out.write(content);
             out.flush();
-        } catch (IOException e) {
-            e.printStackTrace();
+            return;
+        }
+
+        final var length = Files.size(filePath);
+        out.write((
+                "HTTP/1.1 200 OK\r\n" +
+                        "Content-Type: " + mimeType + "\r\n" +
+                        "Content-Length: " + length + "\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n"
+        ).getBytes());
+        Files.copy(filePath, out);
+        out.flush();
+    }
+
+
+    public void resourceNotFound(BufferedOutputStream out) throws IOException {
+        out.write((
+                "HTTP/1.1 404 Not Found\r\n" +
+                        "Content-Length: 0\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n"
+        ).getBytes());
+        out.flush();
+    }
+
+    public synchronized void addHandler(String method, String path, Handler handler) {
+        if (!handlers.containsKey(method)) {
+            handlers.put(method, new HashMap<>());
+        }
+        if (!handlers.get(method).containsKey(path)) {
+            handlers.get(method).put(path, handler);
         }
     }
 }
