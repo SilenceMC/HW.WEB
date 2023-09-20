@@ -1,6 +1,5 @@
 package ru.netology;
 
-import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
 
 import java.io.BufferedOutputStream;
@@ -10,7 +9,6 @@ import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -48,7 +46,7 @@ public class Server {
                 executorService.submit(() -> {
                     try {
                         connectionProcessing(socket);
-                    } catch (IOException | URISyntaxException e) {
+                    } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
                 });
@@ -56,7 +54,7 @@ public class Server {
         }
     }
 
-    public void connectionProcessing(Socket socket) throws IOException, URISyntaxException {
+    public void connectionProcessing(Socket socket) throws IOException {
         try (final var in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              final var out = new BufferedOutputStream(socket.getOutputStream())) {
 
@@ -71,8 +69,6 @@ public class Server {
             final var method = parts[0];
             final var path = parts[1];
 
-            System.out.println(getQueryParam(path));
-
             var request = new Request(method, path);
 
             if (validPaths.contains(request.getPath())) {
@@ -80,20 +76,16 @@ public class Server {
             }
 
             if (!handlers.containsKey(request.getMethod())) {
-                resourceNotFound(out);
+                resourceNotFound(request, out);
             } else {
                 var handlerMap = handlers.get(request.getMethod());
                 if (!handlerMap.containsKey(request.getPath())) {
-                    resourceNotFound(out);
+                    resourceNotFound(request, out);
                 } else {
                     handlerMap.get(path).handle(request, out);
                 }
             }
         }
-    }
-
-    public List<NameValuePair> getQueryParam(String path) throws URISyntaxException {
-        return URLEncodedUtils.parse(new URI(path), StandardCharsets.UTF_8);
     }
 
     public void requestCanHandle(Request request, BufferedOutputStream out) throws IOException {
@@ -132,7 +124,8 @@ public class Server {
     }
 
 
-    public void resourceNotFound(BufferedOutputStream out) throws IOException, URISyntaxException {
+    public void resourceNotFound(Request request, BufferedOutputStream out) throws IOException {
+        var queryParam = URLEncodedUtils.parse(request.getPath(), StandardCharsets.UTF_8);
         out.write((
                 "HTTP/1.1 404 Not Found\r\n" +
                         "Content-Length: 0\r\n" +
@@ -140,6 +133,7 @@ public class Server {
                         "\r\n"
         ).getBytes());
         out.flush();
+        System.out.println(queryParam.toString());
     }
 
     public synchronized void addHandler(String method, String path, Handler handler) {
