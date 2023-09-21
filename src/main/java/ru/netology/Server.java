@@ -1,18 +1,22 @@
 package ru.netology;
 
+import org.apache.http.client.utils.URLEncodedUtils;
+
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server {
@@ -62,8 +66,10 @@ public class Server {
             }
 
             final var method = parts[0];
-            final var path = parts[1];
-            var request = new Request(method, path);
+            final var path = parts[1].split("\\?")[0];
+            final var queryParams = URLEncodedUtils.parse(new URI(parts[1]), StandardCharsets.UTF_8);
+
+            var request = new Request(method, path, queryParams);
 
             if (validPaths.contains(request.getPath())) {
                 requestCanHandle(request, out);
@@ -79,6 +85,8 @@ public class Server {
                     handlerMap.get(path).handle(request, out);
                 }
             }
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -116,7 +124,6 @@ public class Server {
         Files.copy(filePath, out);
         out.flush();
     }
-
 
     public void resourceNotFound(BufferedOutputStream out) throws IOException {
         out.write((
