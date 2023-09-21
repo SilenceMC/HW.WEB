@@ -59,6 +59,7 @@ public class Server {
              final var out = new BufferedOutputStream(socket.getOutputStream())) {
 
             final var requestLine = in.readLine();
+            final var requestBody = in.read('\r\n\r\n');
             final var parts = requestLine.split(" ");
 
             if (parts.length != REQUEST_LINE_LENGTH) {
@@ -76,11 +77,11 @@ public class Server {
             }
 
             if (!handlers.containsKey(request.getMethod())) {
-                resourceNotFound(request, out);
+                resourceNotFound(out);
             } else {
                 var handlerMap = handlers.get(request.getMethod());
                 if (!handlerMap.containsKey(request.getPath())) {
-                    resourceNotFound(request, out);
+                    resourceNotFound(out);
                 } else {
                     handlerMap.get(path).handle(request, out);
                 }
@@ -123,9 +124,7 @@ public class Server {
         out.flush();
     }
 
-
-    public void resourceNotFound(Request request, BufferedOutputStream out) throws IOException {
-        var queryParam = URLEncodedUtils.parse(request.getPath(), StandardCharsets.UTF_8);
+    public void resourceNotFound(BufferedOutputStream out) throws IOException {
         out.write((
                 "HTTP/1.1 404 Not Found\r\n" +
                         "Content-Length: 0\r\n" +
@@ -133,7 +132,6 @@ public class Server {
                         "\r\n"
         ).getBytes());
         out.flush();
-        System.out.println(queryParam.toString());
     }
 
     public synchronized void addHandler(String method, String path, Handler handler) {
