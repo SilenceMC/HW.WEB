@@ -9,7 +9,7 @@ import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
-import java.nio.charset.Charset;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,7 +17,6 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server {
@@ -59,7 +58,6 @@ public class Server {
              final var out = new BufferedOutputStream(socket.getOutputStream())) {
 
             final var requestLine = in.readLine();
-            final var requestBody = in.read('\r\n\r\n');
             final var parts = requestLine.split(" ");
 
             if (parts.length != REQUEST_LINE_LENGTH) {
@@ -68,9 +66,10 @@ public class Server {
             }
 
             final var method = parts[0];
-            final var path = parts[1];
+            final var path = parts[1].split("\\?")[0];
+            final var queryParams = URLEncodedUtils.parse(new URI(parts[1]), StandardCharsets.UTF_8);
 
-            var request = new Request(method, path);
+            var request = new Request(method, path, queryParams);
 
             if (validPaths.contains(request.getPath())) {
                 requestCanHandle(request, out);
@@ -86,6 +85,8 @@ public class Server {
                     handlerMap.get(path).handle(request, out);
                 }
             }
+        } catch (URISyntaxException e) {
+            throw new RuntimeException(e);
         }
     }
 
